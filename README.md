@@ -2,18 +2,60 @@
 
 一个 Vue3 演示项目：客户端填写表单、后台查看与处理。使用 Vue Router 做页面跳转，使用 Pinia 管理状态，数据以 JSON 形式持久化到浏览器 localStorage，不引入任何数据库。
 
+## 快速开始
+
+前置：安装 [bun](https://bun.sh/)（也可用 npm/pnpm，但仓库的 lockfile 是 `bun.lock`，用 bun 最省事）。
+
+```bash
+# 1. 克隆
+git clone https://github.com/Wit-2k/vue3-demo.git
+cd vue3-demo
+
+# 2. 安装依赖
+bun install
+
+# 3. 启动开发服务器
+bun run dev
+# 打开浏览器访问 http://localhost:5173
+#   /client  客户端填表
+#   /admin   后台管理
+```
+
+### 常用脚本
+
+```bash
+bun run dev        # 启动开发服务器（默认 http://localhost:5173，带 HMR）
+bun run build      # 类型检查 + 生产构建（输出到 dist/）
+bun run test       # 运行 vitest 单元测试（一次性）
+bun run test:watch # 测试监听模式
+bun run type-check # 仅运行 vue-tsc 类型检查
+bun run preview    # 预览生产构建产物
+```
+
+> 注意：`bun run build` 内部用 `npm-run-all2` 调 `npm`，若你的环境只有 bun 没有 npm，会报 `'npm' is not recognized`。改用 `bun run build-only`（直接走 `vite build`）即可，或装一份 npm。
+
+### 关于数据
+
+- 所有数据存在**浏览器的 localStorage** 里（key 为 `demo_submissions` 和 `demo_requests`），不经过任何服务器。
+- 因此数据是**按浏览器隔离**的：客户端提交的数据只在同一个浏览器里可见，后台也在同一个浏览器打开 `/admin` 才能看到。换浏览器、无痕窗口、清缓存都会丢数据——这是演示项目的预期行为。
+- 想清空重来：浏览器 DevTools → Application → Local Storage → 删除 `demo_submissions` / `demo_requests` 两个 key，或直接 `localStorage.clear()`。
+
+### 如何阅读代码
+
+建议按数据流向阅读，从外到内再回到外：
+
+1. `src/types.ts` —— 先看数据长什么样（`Submission`、`ChangeRequest`）。
+2. `src/services/dataService.ts` —— 最底层，看数据怎么存取。
+3. `src/stores/formStore.ts` —— 核心，所有业务规则都在这里的 action 里（提交、发起请求、处理请求、排序、直接编辑）。
+4. `src/views/ClientView.vue` / `src/views/AdminView.vue` —— UI 层，调用 store 的 action，本身不含业务逻辑。
+5. `src/router/index.ts` + `src/main.ts` + `src/App.vue` —— 装配层，把上面几部分串起来。
+
+单测在对应的 `__tests__/` 目录下，按模块对照源码看即可。开发中踩到的坑见 `Progress.md`。
+
 ## 环境与脚本
 
 - 包管理：[bun](https://bun.sh/)（也可用 npm/pnpm，但 lockfile 是 bun 的）
 - Node 要求见 `package.json` 的 `engines`
-
-```bash
-bun install        # 安装依赖
-bun run dev        # 启动开发服务器（默认 http://localhost:5173）
-bun run build      # 类型检查 + 生产构建
-bun run test       # 运行 vitest 单元测试
-bun run type-check # 仅运行 vue-tsc 类型检查
-```
 
 ## 业务说明
 
