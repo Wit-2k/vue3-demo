@@ -2,6 +2,7 @@
 // 客户端页面：输入提交、查看本人提交记录、请求删除、请求修改
 import { computed, reactive, ref } from 'vue'
 import { useFormStore } from '@/stores/formStore'
+import { formatTime, statusText } from '@/utils/format'
 import type { Submission } from '@/types'
 
 const store = useFormStore()
@@ -35,8 +36,8 @@ const requestModal = reactive<{
   open: boolean
   type: 'delete' | 'modify'
   submission: Submission | null
-  newName: string
-  newContent: string
+  newName?: string
+  newContent?: string
   reason: string
 }>({
   open: false,
@@ -78,34 +79,36 @@ function submitRequest() {
     requestMsg.value = '请填写原因'
     return
   }
-  if (requestModal.type === 'modify') {
-    if (!requestModal.newName.trim() || !requestModal.newContent.trim()) {
-      requestMsg.value = '新姓名和新内容不能为空'
+  /** 带重命名的解构赋值 */
+  const { type, reason, newName: rawName, newContent: rawContent } = requestModal
+  const newName = rawName?.trim()
+  const newContent = rawContent?.trim()
+
+  if (type === 'modify') {
+    // 1. 只有当用户输入了纯空格等无效字符时，才提示不能为空白
+    if ((rawName && !newName) || (rawContent && !newContent)) {
+      requestMsg.value = '新姓名和新内容不能为空白'
+      return
+    }
+
+    // 2. 若未做任何有效修改，提示至少修改一项
+    if (!newName && !newContent) {
+      requestMsg.value = '请至少修改姓名或内容中的一项'
       return
     }
   }
 
+  // 3. 合并 createRequest 调用，利用展开运算符动态附加 modify 时的字段
   store.createRequest({
     submissionId: sub.id,
-    type: requestModal.type,
-    reason: requestModal.reason,
-    newName: requestModal.type === 'modify' ? requestModal.newName : undefined,
-    newContent:
-      requestModal.type === 'modify' ? requestModal.newContent : undefined,
+    type,
+    reason,
+    ...(type === 'modify' && { newName, newContent }) // 非常巧妙的写法：仅在 type === 'modify' 时才展开 newName/newContent
   })
 
   requestMsg.value =
     requestModal.type === 'delete' ? '删除请求已提交，等待后台处理' : '修改请求已提交，等待后台处理'
   closeRequestModal()
-}
-
-// ---------- 辅助 ----------
-function formatTime(ts: number): string {
-  return new Date(ts).toLocaleString()
-}
-
-function statusText(s: Submission): string {
-  return s.status === 'active' ? '生效中' : '已删除'
 }
 </script>
 
@@ -159,7 +162,9 @@ function statusText(s: Submission): string {
             <td>
               <template v-if="s.status === 'active'">
                 <button class="btn btn--sm" @click="openModifyRequest(s)">请求修改</button>
-                <button class="btn btn--sm btn--danger" @click="openDeleteRequest(s)">请求删除</button>
+                <button class="btn btn--sm btn--danger" @click="openDeleteRequest(s)">
+                  请求删除
+                </button>
               </template>
               <span v-else class="muted">—</span>
             </td>
@@ -197,9 +202,7 @@ function statusText(s: Submission): string {
 
         <div class="modal__actions">
           <button class="btn" @click="closeRequestModal">取消</button>
-          <button class="btn btn--primary" @click="submitRequest">
-            提交请求
-          </button>
+          <button class="btn btn--primary" @click="submitRequest">提交请求</button>
         </div>
       </div>
     </div>
@@ -207,149 +210,14 @@ function statusText(s: Submission): string {
 </template>
 
 <style scoped>
+/*
+ * 公共样式（.card / .btn / .table / .tag / .modal …）已提取到
+ * src/assets/styles/base.css，由 main.ts 全局引入（见 §2.1）。
+ * 这里只保留 ClientView 特有的容器布局。
+ */
 .client {
   display: flex;
   flex-direction: column;
   gap: 24px;
-}
-
-.card {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-  background: #fff;
-}
-
-.card h3 {
-  margin: 0 0 12px;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.field--inline {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-}
-
-.field label {
-  font-size: 14px;
-  color: #374151;
-}
-
-.field input,
-.field textarea {
-  padding: 8px;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
-  font: inherit;
-}
-
-.btn {
-  padding: 8px 14px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  border-radius: 4px;
-  cursor: pointer;
-  font: inherit;
-}
-
-.btn:hover {
-  background: #f3f4f6;
-}
-
-.btn--primary {
-  background: #2563eb;
-  color: #fff;
-  border-color: #2563eb;
-}
-
-.btn--primary:hover {
-  background: #1d4ed8;
-}
-
-.btn--danger {
-  color: #dc2626;
-  border-color: #dc2626;
-}
-
-.btn--sm {
-  padding: 4px 8px;
-  font-size: 13px;
-  margin-right: 4px;
-}
-
-.msg {
-  margin: 8px 0 0;
-  color: #2563eb;
-  font-size: 14px;
-}
-
-.muted {
-  color: #9ca3af;
-  font-size: 14px;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 8px;
-}
-
-.table th,
-.table td {
-  border: 1px solid #e5e7eb;
-  padding: 8px;
-  text-align: left;
-  font-size: 14px;
-}
-
-.table th {
-  background: #f9fafb;
-}
-
-.tag {
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 12px;
-}
-
-.tag--ok {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.tag--del {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.modal-mask {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.modal {
-  background: #fff;
-  border-radius: 8px;
-  padding: 20px;
-  width: 420px;
-  max-width: 90vw;
-}
-
-.modal__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 12px;
 }
 </style>

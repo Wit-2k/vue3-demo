@@ -2,6 +2,8 @@
 // 后台页面：查看、排序、处理请求、直接编辑提交
 import { computed, reactive, ref } from 'vue'
 import { useFormStore } from '@/stores/formStore'
+import { formatTime, requestTypeText, statusText } from '@/utils/format'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import type { ChangeRequest, Submission } from '@/types'
 
 const store = useFormStore()
@@ -30,18 +32,63 @@ function sortIndicator(field: SortField): string {
 }
 
 // ---------- 3. 处理请求 ----------
-const pendingRequests = computed<ChangeRequest[]>(() =>
-  store.requests
-    .filter((r) => r.status === 'pending')
-    .sort((a, b) => b.createdAt - a.createdAt),
-)
+// submissionMap：把 submissions 数组转成 Map，按 id 做 O(1) 查找，
+// 避免每次渲染都遍历整个数组（见 §5.1 / §10.3）。
+const submissionMap = computed<Map<string, Submission>>(() => {
+  const map = new Map<string, Submission>()
+  for (const s of store.submissions) map.set(s.id, s)
+  return map
+})
 
-function findSubmission(id: string): Submission | undefined {
-  return store.submissions.find((s) => s.id === id)
+/** 一条 pending 请求 + 它关联的 submission（可能不存在）。 */
+interface PendingItem {
+  req: ChangeRequest
+  submission: Submission | undefined
 }
 
+const pendingRequests = computed<PendingItem[]>(() =>
+  store.requests
+    .filter((r) => r.status === 'pending')
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map((req) => ({ req, submission: submissionMap.value.get(req.submissionId) })),
+)
+
+// 二次确认弹层：approve delete 这类不可撤销操作前先弹确认（见 §8.2）
+const confirmState = reactive<{ open: boolean; reqId: string | null }>({
+  open: false,
+  reqId: null,
+})
+
+const confirmMessage = computed(() => {
+  const reqId = confirmState.reqId
+  if (!reqId) return ''
+  const item = pendingRequests.value.find((it) => it.req.id === reqId)
+  const sub = item?.submission
+  const target = sub ? `「${sub.name}」` : '该提交'
+  return `确定要同意删除${target}吗？此操作不可撤销。`
+})
+
 function approve(req: ChangeRequest) {
+  if (req.type === 'delete') {
+    // 删除不可撤销，先弹二次确认
+    confirmState.reqId = req.id
+    confirmState.open = true
+    return
+  }
+  // modify 可直接执行
   store.resolveRequest(req.id, true)
+}
+
+function confirmApprove() {
+  const reqId = confirmState.reqId
+  confirmState.open = false
+  confirmState.reqId = null
+  if (reqId) store.resolveRequest(reqId, true)
+}
+
+function cancelConfirm() {
+  confirmState.open = false
+  confirmState.reqId = null
 }
 
 function reject(req: ChangeRequest) {
@@ -50,10 +97,11 @@ function reject(req: ChangeRequest) {
 
 // 历史已处理请求（折叠展示，便于核对）
 const showHistory = ref(false)
-const historyRequests = computed<ChangeRequest[]>(() =>
+const historyRequests = computed<PendingItem[]>(() =>
   store.requests
     .filter((r) => r.status !== 'pending')
-    .sort((a, b) => b.createdAt - a.createdAt),
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map((req) => ({ req, submission: submissionMap.value.get(req.submissionId) })),
 )
 
 // ---------- 直接编辑 ----------
@@ -82,19 +130,6 @@ function saveEdit() {
   })
   editing.id = null
 }
-
-// ---------- 辅助 ----------
-function formatTime(ts: number): string {
-  return new Date(ts).toLocaleString()
-}
-
-function statusText(s: Submission): string {
-  return s.status === 'active' ? '生效中' : '已删除'
-}
-
-function requestTypeText(t: ChangeRequest['type']): string {
-  return t === 'delete' ? '删除' : '修改'
-}
 </script>
 
 <template>
@@ -107,10 +142,25 @@ function requestTypeText(t: ChangeRequest['type']): string {
       <table v-if="sortedSubmissions.length" class="table">
         <thead>
           <tr>
-            <th>姓名 <button class="sort-btn" @click="toggleSort('name')">排序{{ sortIndicator('name') }}</button></th>
+            <th>
+              姓名
+              <button class="sort-btn" @click="toggleSort('name')">
+                排序{{ sortIndicator('name') }}
+              </button>
+            </th>
             <th>内容</th>
-            <th>提交时间 <button class="sort-btn" @click="toggleSort('createdAt')">排序{{ sortIndicator('createdAt') }}</button></th>
-            <th>更新时间 <button class="sort-btn" @click="toggleSort('updatedAt')">排序{{ sortIndicator('updatedAt') }}</button></th>
+            <th>
+              提交时间
+              <button class="sort-btn" @click="toggleSort('createdAt')">
+                排序{{ sortIndicator('createdAt') }}
+              </button>
+            </th>
+            <th>
+              更新时间
+              <button class="sort-btn" @click="toggleSort('updatedAt')">
+                排序{{ sortIndicator('updatedAt') }}
+              </button>
+            </th>
             <th>状态</th>
             <th>操作</th>
           </tr>
@@ -152,28 +202,27 @@ function requestTypeText(t: ChangeRequest['type']): string {
     <div class="card">
       <h3>待处理请求</h3>
       <div v-if="pendingRequests.length" class="requests">
-        <div v-for="req in pendingRequests" :key="req.id" class="request">
+        <div v-for="item in pendingRequests" :key="item.req.id" class="request">
           <div class="request__head">
-            <span :class="['tag', req.type === 'delete' ? 'tag--del' : 'tag--warn']">
-              {{ requestTypeText(req.type) }}请求
+            <span :class="['tag', item.req.type === 'delete' ? 'tag--del' : 'tag--warn']">
+              {{ requestTypeText(item.req.type) }}请求
             </span>
-            <span class="muted">{{ formatTime(req.createdAt) }}</span>
+            <span class="muted">{{ formatTime(item.req.createdAt) }}</span>
           </div>
-          <div v-if="findSubmission(req.submissionId)">
+          <div v-if="item.submission">
             <p>
-              目标提交：<strong>{{ findSubmission(req.submissionId)!.name }}</strong>
-              - {{ findSubmission(req.submissionId)!.content }}
+              目标提交：<strong>{{ item.submission.name }}</strong> - {{ item.submission.content }}
             </p>
-            <template v-if="req.type === 'modify'">
-              <p>新姓名：{{ req.newName }}</p>
-              <p>新内容：{{ req.newContent }}</p>
+            <template v-if="item.req.type === 'modify'">
+              <p>新姓名：{{ item.req.newName }}</p>
+              <p>新内容：{{ item.req.newContent }}</p>
             </template>
           </div>
           <p v-else class="muted">（关联的提交不存在）</p>
-          <p>原因：{{ req.reason }}</p>
+          <p>原因：{{ item.req.reason }}</p>
           <div class="request__actions">
-            <button class="btn btn--sm btn--primary" @click="approve(req)">同意</button>
-            <button class="btn btn--sm btn--danger" @click="reject(req)">拒绝</button>
+            <button class="btn btn--sm btn--primary" @click="approve(item.req)">同意</button>
+            <button class="btn btn--sm btn--danger" @click="reject(item.req)">拒绝</button>
           </div>
         </div>
       </div>
@@ -194,14 +243,14 @@ function requestTypeText(t: ChangeRequest['type']): string {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="r in historyRequests" :key="r.id">
-              <td>{{ requestTypeText(r.type) }}</td>
-              <td>{{ findSubmission(r.submissionId)?.name ?? '（已不存在）' }}</td>
-              <td>{{ r.reason }}</td>
-              <td>{{ formatTime(r.createdAt) }}</td>
+            <tr v-for="item in historyRequests" :key="item.req.id">
+              <td>{{ requestTypeText(item.req.type) }}</td>
+              <td>{{ item.submission?.name ?? '（已不存在）' }}</td>
+              <td>{{ item.req.reason }}</td>
+              <td>{{ formatTime(item.req.createdAt) }}</td>
               <td>
-                <span :class="['tag', r.status === 'approved' ? 'tag--ok' : 'tag--del']">
-                  {{ r.status === 'approved' ? '已同意' : '已拒绝' }}
+                <span :class="['tag', item.req.status === 'approved' ? 'tag--ok' : 'tag--del']">
+                  {{ item.req.status === 'approved' ? '已同意' : '已拒绝' }}
                 </span>
               </td>
             </tr>
@@ -209,117 +258,32 @@ function requestTypeText(t: ChangeRequest['type']): string {
         </table>
       </details>
     </div>
+
+    <!-- 删除请求的二次确认弹层（见 §8.2） -->
+    <ConfirmDialog :open="confirmState.open" title="确认删除" :message="confirmMessage" confirm-text="同意删除"
+      @confirm="confirmApprove" @cancel="cancelConfirm" />
   </section>
 </template>
 
 <style scoped>
+/*
+ * 公共样式（.card / .btn / .table / .tag …）已提取到
+ * src/assets/styles/base.css，由 main.ts 全局引入（见 §2.1）。
+ * 这里只保留 AdminView 特有的样式。
+ */
 .admin {
   display: flex;
   flex-direction: column;
   gap: 24px;
 }
 
-.card {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-  background: #fff;
-}
-
-.card h3 {
-  margin: 0 0 12px;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.table th,
-.table td {
-  border: 1px solid #e5e7eb;
-  padding: 8px;
-  text-align: left;
-  font-size: 14px;
-}
-
-.table th {
-  background: #f9fafb;
-  white-space: nowrap;
-}
-
 .sort-btn {
   border: none;
   background: transparent;
   cursor: pointer;
-  color: #2563eb;
+  color: var(--color-primary);
   font-size: 12px;
   padding: 0;
-}
-
-.btn {
-  padding: 8px 14px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  border-radius: 4px;
-  cursor: pointer;
-  font: inherit;
-}
-
-.btn:hover {
-  background: #f3f4f6;
-}
-
-.btn:disabled {
-  color: #d1d5db;
-  cursor: not-allowed;
-}
-
-.btn--primary {
-  background: #2563eb;
-  color: #fff;
-  border-color: #2563eb;
-}
-
-.btn--primary:hover {
-  background: #1d4ed8;
-}
-
-.btn--danger {
-  color: #dc2626;
-  border-color: #dc2626;
-}
-
-.btn--sm {
-  padding: 4px 8px;
-  font-size: 13px;
-  margin-right: 4px;
-}
-
-.muted {
-  color: #9ca3af;
-  font-size: 14px;
-}
-
-.tag {
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 12px;
-}
-
-.tag--ok {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.tag--del {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.tag--warn {
-  background: #fef9c3;
-  color: #854d0e;
 }
 
 .requests {
@@ -329,7 +293,7 @@ function requestTypeText(t: ChangeRequest['type']): string {
 }
 
 .request {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 12px;
   background: #fafafa;
@@ -358,6 +322,6 @@ function requestTypeText(t: ChangeRequest['type']): string {
 .history summary {
   cursor: pointer;
   font-size: 14px;
-  color: #2563eb;
+  color: var(--color-primary);
 }
 </style>

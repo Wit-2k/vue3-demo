@@ -1,0 +1,193 @@
+/*
+ * 全局基础样式：把 ClientView / AdminView / ConfirmDialog 共用的样式集中在这里，
+ * 避免在每个组件里重复写一遍（见 teaching/20-project-deficiencies.md §2.1）。
+ *
+ * 同时用 CSS 变量统一管理颜色与圆角（§2.1 方案 B），方便以后做主题切换。
+ */
+
+:root {
+  /* 主色 / 危险色 */
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-danger: #dc2626;
+
+  /* 状态标签配色 */
+  --color-success-bg: #dcfce7;
+  --color-success-text: #166534;
+  --color-danger-bg: #fee2e2;
+  --color-danger-text: #991b1b;
+  --color-warn-bg: #fef9c3;
+  --color-warn-text: #854d0e;
+
+  /* 中性色 */
+  --color-muted: #9ca3af;
+  --color-text: #374151;
+  --color-border: #e5e7eb;
+  --color-border-strong: #d1d5db;
+  --color-bg-hover: #f3f4f6;
+  --color-bg-th: #f9fafb;
+
+  /* 圆角 */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-tag: 10px;
+}
+
+/* ---------- 卡片容器 ---------- */
+.card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  background: #fff;
+}
+
+.card h3 {
+  margin: 0 0 12px;
+}
+
+/* ---------- 表单字段 ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.field--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.field label {
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+.field input,
+.field textarea {
+  padding: 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+/* ---------- 按钮 ---------- */
+.btn {
+  padding: 8px 14px;
+  border: 1px solid var(--color-border-strong);
+  background: #fff;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font: inherit;
+}
+
+.btn:hover {
+  background: var(--color-bg-hover);
+}
+
+.btn:disabled {
+  color: var(--color-border-strong);
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+
+.btn--primary:hover {
+  background: var(--color-primary-hover);
+}
+
+.btn--danger {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.btn--sm {
+  padding: 4px 8px;
+  font-size: 13px;
+  margin-right: 4px;
+}
+
+/* ---------- 提示文字 ---------- */
+.msg {
+  margin: 8px 0 0;
+  color: var(--color-primary);
+  font-size: 14px;
+}
+
+.muted {
+  color: var(--color-muted);
+  font-size: 14px;
+}
+
+/* ---------- 表格 ---------- */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.table th,
+.table td {
+  border: 1px solid var(--color-border);
+  padding: 8px;
+  text-align: left;
+  font-size: 14px;
+}
+
+.table th {
+  background: var(--color-bg-th);
+  white-space: nowrap;
+}
+
+/* ---------- 状态标签 ---------- */
+.tag {
+  padding: 2px 8px;
+  border-radius: var(--radius-tag);
+  font-size: 12px;
+}
+
+.tag--ok {
+  background: var(--color-success-bg);
+  color: var(--color-success-text);
+}
+
+.tag--del {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+}
+
+.tag--warn {
+  background: var(--color-warn-bg);
+  color: var(--color-warn-text);
+}
+
+/* ---------- 弹层 ---------- */
+/* ClientView 的内联弹层与 ConfirmDialog 共用这套样式 */
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal {
+  background: #fff;
+  border-radius: var(--radius-md);
+  padding: 20px;
+  width: 420px;
+  max-width: 90vw;
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
